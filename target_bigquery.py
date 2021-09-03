@@ -41,6 +41,7 @@ APPLICATION_NAME = 'Singer BigQuery Target'
 
 StreamMeta = collections.namedtuple('StreamMeta', ['schema', 'key_properties', 'bookmark_properties'])
 
+
 def emit_state(state):
     if state is not None:
         line = json.dumps(state)
@@ -48,12 +49,13 @@ def emit_state(state):
         sys.stdout.write("{}\n".format(line))
         sys.stdout.flush()
 
+
 def clear_dict_hook(items):
     return {k: v if v is not None else '' for k, v in items}
 
+
 def define_schema(field, name):
     schema_name = name
-    schema_type = "STRING"
     schema_mode = "NULLABLE"
     schema_description = None
     schema_fields = ()
@@ -80,9 +82,8 @@ def define_schema(field, name):
         schema_type = field.get('items').get('type')
         schema_mode = "REPEATED"
         if schema_type == "object":
-          schema_type = "RECORD"
-          schema_fields = tuple(build_schema(field.get('items')))
-
+            schema_type = "RECORD"
+            schema_fields = tuple(build_schema(field.get('items')))
 
     if schema_type == "string":
         if "format" in field:
@@ -92,7 +93,8 @@ def define_schema(field, name):
     if schema_type == 'number':
         schema_type = 'FLOAT'
 
-    return (schema_name, schema_type, schema_mode, schema_description, schema_fields)
+    return schema_name, schema_type, schema_mode, schema_description, schema_fields
+
 
 def build_schema(schema):
     SCHEMA = []
@@ -107,7 +109,16 @@ def build_schema(schema):
 
     return SCHEMA
 
-def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, validate_records=True, allow_schema_update=False):
+
+def persist_lines_job(
+    project_id,
+    dataset_id,
+    lines=None,
+    truncate=False,
+    validate_records=True,
+    allow_schema_update=False,
+    ignore_unknown_fields=False,
+):
     state = None
     schemas = {}
     key_properties = {}
@@ -136,8 +147,6 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
             dat = bytes(json.dumps(msg.record, use_decimal=True) + '\n', 'UTF-8')
 
             rows[msg.stream].write(dat)
-            #rows[msg.stream].write(bytes(str(msg.record) + '\n', 'UTF-8'))
-
             state = None
 
         elif isinstance(msg, singer.StateMessage):
@@ -160,10 +169,10 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
 
     for table in rows.keys():
         table_ref = bigquery_client.dataset(dataset_id).table(table)
-        SCHEMA = build_schema(schemas[table])
         load_config = LoadJobConfig()
-        load_config.schema = SCHEMA
+        load_config.schema = build_schema(schemas[table])
         load_config.source_format = SourceFormat.NEWLINE_DELIMITED_JSON
+        load_config.ignore_unknown_values = ignore_unknown_fields
 
         if allow_schema_update:
             load_config.schema_update_options = [
@@ -181,6 +190,7 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
         logger.info(load_job.result())
 
     return state
+
 
 def persist_lines_stream(project_id, dataset_id, lines=None, validate_records=True, allow_schema_update=False):
     state = None
@@ -252,6 +262,7 @@ def persist_lines_stream(project_id, dataset_id, lines=None, validate_records=Tr
 
     return state
 
+
 def collect():
     try:
         version = pkg_resources.get_distribution('target-bigquery').version
@@ -270,6 +281,7 @@ def collect():
     except:
         logger.debug('Collection request failed')
 
+
 def main():
     with open(flags.config) as input_config:
         config = json.load(input_config)
@@ -287,6 +299,7 @@ def main():
 
     validate_records = config.get('validate_records', True)
     allow_schema_update = config.get('allow_schema_update', False)
+    ignore_unknown_fields = config.get('ignore_unknown_fields', False)
 
     input_data = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8')
 
@@ -305,7 +318,8 @@ def main():
             input_data,
             truncate=truncate,
             validate_records=validate_records,
-            allow_schema_update=allow_schema_update
+            allow_schema_update=allow_schema_update,
+            ignore_unknown_fields=ignore_unknown_fields,
         )
 
     emit_state(state)
