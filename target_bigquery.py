@@ -19,7 +19,7 @@ from tempfile import TemporaryFile
 
 from google.cloud import bigquery
 from google.cloud.bigquery.job import SourceFormat
-from google.cloud.bigquery import Dataset, WriteDisposition
+from google.cloud.bigquery import Dataset, WriteDisposition, SchemaUpdateOption
 from google.cloud.bigquery import SchemaField
 from google.cloud.bigquery import LoadJobConfig
 from google.api_core import exceptions
@@ -107,7 +107,7 @@ def build_schema(schema):
 
     return SCHEMA
 
-def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, validate_records=True):
+def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, validate_records=True, allow_schema_update=False):
     state = None
     schemas = {}
     key_properties = {}
@@ -176,6 +176,12 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
         load_config.schema = SCHEMA
         load_config.source_format = SourceFormat.NEWLINE_DELIMITED_JSON
 
+        if allow_schema_update:
+            load_config.schema_update_options = [
+                SchemaUpdateOption.ALLOW_FIELD_ADDITION,
+                SchemaUpdateOption.ALLOW_FIELD_RELAXATION
+            ]
+
         if truncate:
             load_config.write_disposition = WriteDisposition.WRITE_TRUNCATE
 
@@ -195,7 +201,7 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
 
     return state
 
-def persist_lines_stream(project_id, dataset_id, lines=None, validate_records=True):
+def persist_lines_stream(project_id, dataset_id, lines=None, validate_records=True, allow_schema_update=False):
     state = None
     schemas = {}
     key_properties = {}
@@ -299,13 +305,27 @@ def main():
         truncate = False
 
     validate_records = config.get('validate_records', True)
+    allow_schema_update = config.get('allow_schema_update', False)
 
     input = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8')
 
     if config.get('stream_data', True):
-        state = persist_lines_stream(config['project_id'], config['dataset_id'], input, validate_records=validate_records)
+        state = persist_lines_stream(
+            config['project_id'],
+            config['dataset_id'],
+            input,
+            validate_records=validate_records,
+            allow_schema_update=allow_schema_update
+        )
     else:
-        state = persist_lines_job(config['project_id'], config['dataset_id'], input, truncate=truncate, validate_records=validate_records)
+        state = persist_lines_job(
+            config['project_id'],
+            config['dataset_id'],
+            input,
+            truncate=truncate,
+            validate_records=validate_records,
+            allow_schema_update=allow_schema_update
+        )
 
     emit_state(state)
     logger.debug("Exiting normally")
