@@ -271,8 +271,8 @@ def collect():
         logger.debug('Collection request failed')
 
 def main():
-    with open(flags.config) as input:
-        config = json.load(input)
+    with open(flags.config) as input_config:
+        config = json.load(input_config)
 
     if not config.get('disable_collection', False):
         logger.info('Sending version information to stitchdata.com. ' +
@@ -288,13 +288,13 @@ def main():
     validate_records = config.get('validate_records', True)
     allow_schema_update = config.get('allow_schema_update', False)
 
-    input = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8')
+    input_data = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8')
 
     if config.get('stream_data', True):
         state = persist_lines_stream(
             config['project_id'],
             config['dataset_id'],
-            input,
+            input_data,
             validate_records=validate_records,
             allow_schema_update=allow_schema_update
         )
@@ -302,7 +302,7 @@ def main():
         state = persist_lines_job(
             config['project_id'],
             config['dataset_id'],
-            input,
+            input_data,
             truncate=truncate,
             validate_records=validate_records,
             allow_schema_update=allow_schema_update
