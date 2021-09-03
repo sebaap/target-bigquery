@@ -111,16 +111,10 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
     state = None
     schemas = {}
     key_properties = {}
-    tables = {}
     rows = {}
     errors = {}
 
     bigquery_client = bigquery.Client(project=project_id)
-
-    # try:
-    #     dataset = bigquery_client.create_dataset(Dataset(dataset_ref)) or Dataset(dataset_ref)
-    # except exceptions.Conflict:
-    #     pass
 
     for line in lines:
         try:
@@ -154,13 +148,8 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
             table = msg.stream
             schemas[table] = msg.schema
             key_properties[table] = msg.key_properties
-            #tables[table] = bigquery.Table(dataset.table(table), schema=build_schema(schemas[table]))
             rows[table] = TemporaryFile(mode='w+b')
             errors[table] = None
-            # try:
-            #     tables[table] = bigquery_client.create_table(tables[table])
-            # except exceptions.Conflict:
-            #     pass
 
         elif isinstance(msg, singer.ActivateVersionMessage):
             # This is experimental and won't be used yet
@@ -187,17 +176,9 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
 
         rows[table].seek(0)
         logger.info("loading {} to Bigquery.\n".format(table))
-        load_job = bigquery_client.load_table_from_file(
-            rows[table], table_ref, job_config=load_config)
+        load_job = bigquery_client.load_table_from_file(rows[table], table_ref, job_config=load_config)
         logger.info("loading job {}".format(load_job.job_id))
         logger.info(load_job.result())
-
-
-    # for table in errors.keys():
-    #     if not errors[table]:
-    #         print('Loaded {} row(s) into {}:{}'.format(rows[table], dataset_id, table), tables[table].path)
-    #     else:
-    #         print('Errors:', errors[table], sep=" ")
 
     return state
 
