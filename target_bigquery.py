@@ -3,7 +3,7 @@
 import argparse
 import io
 import sys
-import json
+import simplejson as json
 import logging
 import collections
 import threading
@@ -19,7 +19,7 @@ from tempfile import TemporaryFile
 
 from google.cloud import bigquery
 from google.cloud.bigquery.job import SourceFormat
-from google.cloud.bigquery import Dataset, WriteDisposition
+from google.cloud.bigquery import Dataset, WriteDisposition, SchemaUpdateOption
 from google.cloud.bigquery import SchemaField
 from google.cloud.bigquery import LoadJobConfig
 from google.api_core import exceptions
@@ -64,7 +64,7 @@ def define_schema(field, name):
                 schema_mode = 'NULLABLE'
             else:
                 field = types
-            
+
     if isinstance(field['type'], list):
         if field['type'][0] == "null":
             schema_mode = 'NULLABLE'
@@ -97,7 +97,7 @@ def define_schema(field, name):
 def build_schema(schema):
     SCHEMA = []
     for key in schema['properties'].keys():
-        
+
         if not (bool(schema['properties'][key])):
             # if we endup with an empty record.
             continue
@@ -107,20 +107,14 @@ def build_schema(schema):
 
     return SCHEMA
 
-def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, validate_records=True):
+def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, validate_records=True, allow_schema_update=False):
     state = None
     schemas = {}
     key_properties = {}
-    tables = {}
     rows = {}
     errors = {}
 
     bigquery_client = bigquery.Client(project=project_id)
-
-    # try:
-    #     dataset = bigquery_client.create_dataset(Dataset(dataset_ref)) or Dataset(dataset_ref)
-    # except exceptions.Conflict:
-    #     pass
 
     for line in lines:
         try:
@@ -139,7 +133,7 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
                 validate(msg.record, schema)
 
             # NEWLINE_DELIMITED_JSON expects literal JSON formatted data, with a newline character splitting each row.
-            dat = bytes(json.dumps(msg.record) + '\n', 'UTF-8')
+            dat = bytes(json.dumps(msg.record, use_decimal=True) + '\n', 'UTF-8')
 
             rows[msg.stream].write(dat)
             #rows[msg.stream].write(bytes(str(msg.record) + '\n', 'UTF-8'))
@@ -151,16 +145,11 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
             state = msg.value
 
         elif isinstance(msg, singer.SchemaMessage):
-            table = msg.stream 
+            table = msg.stream
             schemas[table] = msg.schema
             key_properties[table] = msg.key_properties
-            #tables[table] = bigquery.Table(dataset.table(table), schema=build_schema(schemas[table]))
             rows[table] = TemporaryFile(mode='w+b')
             errors[table] = None
-            # try:
-            #     tables[table] = bigquery_client.create_table(tables[table])
-            # except exceptions.Conflict:
-            #     pass
 
         elif isinstance(msg, singer.ActivateVersionMessage):
             # This is experimental and won't be used yet
@@ -176,26 +165,24 @@ def persist_lines_job(project_id, dataset_id, lines=None, truncate=False, valida
         load_config.schema = SCHEMA
         load_config.source_format = SourceFormat.NEWLINE_DELIMITED_JSON
 
+        if allow_schema_update:
+            load_config.schema_update_options = [
+                SchemaUpdateOption.ALLOW_FIELD_ADDITION,
+                SchemaUpdateOption.ALLOW_FIELD_RELAXATION
+            ]
+
         if truncate:
             load_config.write_disposition = WriteDisposition.WRITE_TRUNCATE
 
         rows[table].seek(0)
         logger.info("loading {} to Bigquery.\n".format(table))
-        load_job = bigquery_client.load_table_from_file(
-            rows[table], table_ref, job_config=load_config)
+        load_job = bigquery_client.load_table_from_file(rows[table], table_ref, job_config=load_config)
         logger.info("loading job {}".format(load_job.job_id))
         logger.info(load_job.result())
 
-
-    # for table in errors.keys():
-    #     if not errors[table]:
-    #         print('Loaded {} row(s) into {}:{}'.format(rows[table], dataset_id, table), tables[table].path)
-    #     else:
-    #         print('Errors:', errors[table], sep=" ")
-
     return state
 
-def persist_lines_stream(project_id, dataset_id, lines=None, validate_records=True):
+def persist_lines_stream(project_id, dataset_id, lines=None, validate_records=True, allow_schema_update=False):
     state = None
     schemas = {}
     key_properties = {}
@@ -238,7 +225,7 @@ def persist_lines_stream(project_id, dataset_id, lines=None, validate_records=Tr
             state = msg.value
 
         elif isinstance(msg, singer.SchemaMessage):
-            table = msg.stream 
+            table = msg.stream
             schemas[table] = msg.schema
             key_properties[table] = msg.key_properties
             tables[table] = bigquery.Table(dataset.table(table), schema=build_schema(schemas[table]))
@@ -299,13 +286,27 @@ def main():
         truncate = False
 
     validate_records = config.get('validate_records', True)
+    allow_schema_update = config.get('allow_schema_update', False)
 
     input = io.TextIOWrapper(sys.stdin.buffer, encoding='utf-8')
 
     if config.get('stream_data', True):
-        state = persist_lines_stream(config['project_id'], config['dataset_id'], input, validate_records=validate_records)
+        state = persist_lines_stream(
+            config['project_id'],
+            config['dataset_id'],
+            input,
+            validate_records=validate_records,
+            allow_schema_update=allow_schema_update
+        )
     else:
-        state = persist_lines_job(config['project_id'], config['dataset_id'], input, truncate=truncate, validate_records=validate_records)
+        state = persist_lines_job(
+            config['project_id'],
+            config['dataset_id'],
+            input,
+            truncate=truncate,
+            validate_records=validate_records,
+            allow_schema_update=allow_schema_update
+        )
 
     emit_state(state)
     logger.debug("Exiting normally")
