@@ -6,10 +6,6 @@ import sys
 import simplejson as json
 import logging
 import collections
-import threading
-import http.client
-import urllib
-import pkg_resources
 
 from jsonschema import validate
 import singer
@@ -35,7 +31,7 @@ except ImportError:
 logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
 logger = singer.get_logger()
 
-SCOPES = ['https://www.googleapis.com/auth/bigquery','https://www.googleapis.com/auth/bigquery.insertdata']
+SCOPES = ['https://www.googleapis.com/auth/bigquery', 'https://www.googleapis.com/auth/bigquery.insertdata']
 CLIENT_SECRET_FILE = 'client_secret.json'
 APPLICATION_NAME = 'Singer BigQuery Target'
 
@@ -97,7 +93,7 @@ def define_schema(field, name):
 
 
 def build_schema(schema):
-    SCHEMA = []
+    output_schema = []
     for key in schema['properties'].keys():
 
         if not (bool(schema['properties'][key])):
@@ -105,9 +101,9 @@ def build_schema(schema):
             continue
 
         schema_name, schema_type, schema_mode, schema_description, schema_fields = define_schema(schema['properties'][key], key)
-        SCHEMA.append(SchemaField(schema_name, schema_type, schema_mode, schema_description, schema_fields))
+        output_schema.append(SchemaField(schema_name, schema_type, schema_mode, schema_description, schema_fields))
 
-    return SCHEMA
+    return output_schema
 
 
 def persist_lines_job(
@@ -136,7 +132,9 @@ def persist_lines_job(
 
         if isinstance(msg, singer.RecordMessage):
             if msg.stream not in schemas:
-                raise Exception("A record for stream {} was encountered before a corresponding schema".format(msg.stream))
+                raise Exception(
+                    "A record for stream {} was encountered before a corresponding schema".format(msg.stream)
+                )
 
             schema = schemas[msg.stream]
 
@@ -218,7 +216,9 @@ def persist_lines_stream(project_id, dataset_id, lines=None, validate_records=Tr
 
         if isinstance(msg, singer.RecordMessage):
             if msg.stream not in schemas:
-                raise Exception("A record for stream {} was encountered before a corresponding schema".format(msg.stream))
+                raise Exception(
+                    "A record for stream {} was encountered before a corresponding schema".format(msg.stream)
+                )
 
             schema = schemas[msg.stream]
 
