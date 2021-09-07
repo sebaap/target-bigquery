@@ -129,6 +129,7 @@ def persist_lines_job(
     validate_records=True,
     allow_schema_update=False,
     ignore_unknown_fields=False,
+    autodetect_schema=False,
 ):
     state = None
     schemas = {}
@@ -185,15 +186,19 @@ def persist_lines_job(
     for table in rows.keys():
         table_ref = bigquery_client.dataset(dataset_id).table(table)
         load_config = LoadJobConfig()
-        load_config.schema = build_schema(schemas[table])
         load_config.source_format = SourceFormat.NEWLINE_DELIMITED_JSON
         load_config.ignore_unknown_values = ignore_unknown_fields
 
-        if allow_schema_update:
-            load_config.schema_update_options = [
-                SchemaUpdateOption.ALLOW_FIELD_ADDITION,
-                SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
-            ]
+        if autodetect_schema:
+            load_config.autodetect = True
+        else:
+            load_config.schema = build_schema(schemas[table])
+
+            if allow_schema_update:
+                load_config.schema_update_options = [
+                    SchemaUpdateOption.ALLOW_FIELD_ADDITION,
+                    SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
+                ]
 
         if truncate:
             load_config.write_disposition = WriteDisposition.WRITE_TRUNCATE
@@ -308,6 +313,7 @@ def main():
     validate_records = config.get("validate_records", True)
     allow_schema_update = config.get("allow_schema_update", False)
     ignore_unknown_fields = config.get("ignore_unknown_fields", False)
+    autodetect_schema = config.get("autodetect_schema", False)
 
     input_data = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8")
 
@@ -328,6 +334,7 @@ def main():
             validate_records=validate_records,
             allow_schema_update=allow_schema_update,
             ignore_unknown_fields=ignore_unknown_fields,
+            autodetect_schema=autodetect_schema,
         )
 
     emit_state(state)
