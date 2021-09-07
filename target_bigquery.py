@@ -194,11 +194,11 @@ def persist_lines_job(
         else:
             load_config.schema = build_schema(schemas[table])
 
-            if allow_schema_update:
-                load_config.schema_update_options = [
-                    SchemaUpdateOption.ALLOW_FIELD_ADDITION,
-                    SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
-                ]
+        if allow_schema_update:
+            load_config.schema_update_options = [
+                SchemaUpdateOption.ALLOW_FIELD_ADDITION,
+                SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
+            ]
 
         if truncate:
             load_config.write_disposition = WriteDisposition.WRITE_TRUNCATE
