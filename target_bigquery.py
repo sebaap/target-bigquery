@@ -184,6 +184,10 @@ def persist_lines_job(
             raise Exception("Unrecognized message {}".format(msg))
 
     for table in rows.keys():
+        if not rows[table].tell():
+            # this means the tmp file is empty, so nothing to upload.
+            continue
+
         table_ref = bigquery_client.dataset(dataset_id).table(table)
         load_config = LoadJobConfig()
         load_config.source_format = SourceFormat.NEWLINE_DELIMITED_JSON
